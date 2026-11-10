@@ -1,75 +1,414 @@
-# EKS Foundations with Terraform: Starter Project
+# EKS Foundations with Terraform
 
-This repository is the starting point for my **Amazon EKS with Terraform** course: a ready-to-open project with a pinned toolchain and a starter Terraform setup for building an Amazon EKS cluster. Clone it, get the tools in place, configure your AWS access, and initialize Terraform against your own remote state.
+> Production-ready Amazon EKS foundation built from scratch using Terraform.
 
-The labs are included here in `_labs/`. If you are looking for the finished code for every section, please check the [Course Code Repository](https://github.com/lm-academy/eks-foundations-solution).
+This project provisions a complete Amazon EKS environment including networking, IAM, managed node groups, and essential cluster add-ons. It provides a solid baseline for deploying cloud-native workloads on Kubernetes while following Infrastructure as Code (IaC) best practices.
 
-### Course link (with a big discount): [https://www.lauromueller.com/courses/eks-terraform](https://www.lauromueller.com/courses/eks-terraform)
+---
 
-### Check my other courses:
+## Architecture Overview
 
-- 👉 [Argo CD and Argo Rollouts for GitOps: The Definitive Guide](https://www.lauromueller.com/courses/argo-cd-rollouts)
-- 👉 [Prompt Engineering for Developers: The Definitive Guide](https://www.lauromueller.com/courses/prompt-engineering)
-- 👉 [Python for DevOps: Mastering Real-World Automation](https://www.lauromueller.com/courses/python-devops)
-- 👉 [The Complete Docker and Kubernetes Course: From Zero to Hero](https://www.lauromueller.com/courses/docker-kubernetes)
-- 👉 [The Definitive Helm Course: From Beginner to Master](https://www.lauromueller.com/courses/definitive-helm-course)
-- 👉 [Mastering Terraform: From Beginner to Expert](https://www.lauromueller.com/courses/mastering-terraform)
-- 👉 [Mastering GitHub Actions: From Beginner to Expert](https://www.lauromueller.com/courses/mastering-github-actions)
-- 👉 [Write better code: 20 code smells and how to get rid of them](https://www.lauromueller.com/courses/writing-clean-code)
+The infrastructure includes:
 
-## Welcome!
+- Amazon VPC
+- Public and Private Subnets across multiple AZs
+- Internet Gateway
+- NAT Gateway
+- Route Tables and Associations
+- Amazon EKS Control Plane
+- Amazon EKS Managed Node Groups
+- IAM Roles and Policies
+- EKS Core Add-ons
+  - VPC CNI
+  - CoreDNS
+  - kube-proxy
+- Sample Kubernetes Workload Deployment
 
-I'm glad to have you here. Everything below gets your machine ready: a pinned toolchain, AWS access, and Terraform initialized against your own remote state. Once that is done, the `infra/` project is the one we build on, section by section.
+---
 
-## Provided files
+## Repository Structure
 
-- `.devcontainer/`: an opinionated devcontainer that installs Terraform, the AWS CLI, and kubectl at pinned versions, with shell completion and a zsh setup.
-- `.tool-versions`: the same pinned versions for a local install with mise or asdf.
-- `.gitattributes`: enforces LF line endings so the project behaves the same on every operating system.
-- `.gitignore`: keeps Terraform state, plans, `.tfvars`, and local kubeconfigs out of version control.
-- `infra/`: the starter Terraform project (`versions.tf`, `providers.tf`, `backend.tf`), with state configured for an S3 backend. Everything else you write yourself.
-- `k8s/`: ready-made Kubernetes manifests (an nginx Deployment and a LoadBalancer Service).
-- `_labs/`: the written lab for each section, each with its goal, the configuration to target, and the tasks.
-
-## Set up the toolchain
-
-Pinned versions: Terraform `1.15.8`, AWS CLI `2.36.4`, kubectl `1.36.2`. Pick one path.
-
-- **Devcontainer (recommended).** Open the folder in an editor that supports the Dev Containers spec and reopen it in the container, or open it as a GitHub Codespace. It needs a Docker-compatible engine: Docker Desktop (on Windows, use the WSL2 backend), or Colima or Rancher Desktop in its dockerd (moby) mode on macOS or Linux. The container builds with the tools already installed.
-- **Local install.** Install the pinned versions with mise or asdf from `.tool-versions` (`mise install`), or install each tool by hand at those versions.
-
-Confirm the versions either way:
-
-```bash
-terraform version            # Terraform v1.15.8
-aws --version                # aws-cli/2.36.4
-kubectl version --client     # Client Version: v1.36.2
+```text
+.
+├── infra/
+│   ├── backend.tf
+│   ├── backend_to_be_filled.tf
+│   ├── data.tf
+│   ├── eks_control_plane.tf
+│   ├── eks_nodes.tf
+│   ├── iam_cluster.tf
+│   ├── iam_node.tf
+│   ├── locals.tf
+│   ├── network.tf
+│   ├── network_addons.tf
+│   ├── outputs.tf
+│   ├── providers.tf
+│   ├── variables.tf
+│   └── versions.tf
+│
+└── k8s/
+    ├── nginx-deployment.yaml
+    └── nginx-service.yaml
 ```
 
-## Configure AWS access
+---
 
-Configure your credentials with an access key pair and confirm which identity you are authenticated as. The devcontainer presets the region to `us-east-1`; to work in a different region, change `AWS_REGION` in `.devcontainer/devcontainer.json`.
+# Infrastructure Components
+
+## Networking (`network.tf`)
+
+Creates the foundational AWS networking components:
+
+- VPC
+- Public Subnets
+- Private Subnets
+- Internet Gateway
+- NAT Gateway
+- Elastic IPs
+- Route Tables
+- Route Table Associations
+
+### Network Design
+
+```text
+                    Internet
+                        │
+                Internet Gateway
+                        │
+         ┌──────────────┴──────────────┐
+         │                             │
+   Public Subnet AZ1            Public Subnet AZ2
+         │                             │
+      NAT GW                      NAT GW
+         │                             │
+   Private Subnet AZ1          Private Subnet AZ2
+         │                             │
+         └────────── EKS Nodes ────────┘
+```
+
+---
+
+## IAM (`iam_cluster.tf`, `iam_node.tf`)
+
+### Cluster Role
+
+Used by the EKS Control Plane to manage AWS resources.
+
+Key Policies:
+
+- AmazonEKSClusterPolicy
+
+### Node Group Role
+
+Used by worker nodes.
+
+Key Policies:
+
+- AmazonEKSWorkerNodePolicy
+- AmazonEKS_CNI_Policy
+- AmazonEC2ContainerRegistryPullOnly
+
+---
+
+## EKS Control Plane (`eks_control_plane.tf`)
+
+Creates:
+
+- Amazon EKS Cluster
+- Cluster Endpoint
+- Cluster Security Group
+- Kubernetes Control Plane
+
+Private subnets are attached to the cluster for worker node placement.
+
+---
+
+## EKS Managed Nodes (`eks_nodes.tf`)
+
+Creates a managed node group with:
+
+- EC2 Worker Nodes
+- Autoscaling Configuration
+- IAM Integration
+- Cluster Registration
+
+---
+
+## Cluster Add-ons (`network_addons.tf`)
+
+Installs and manages:
+
+### VPC CNI
+
+Provides pod networking inside the VPC.
+
+### CoreDNS
+
+Handles DNS resolution for Kubernetes services.
+
+### kube-proxy
+
+Maintains networking rules on worker nodes.
+
+---
+
+## Terraform State Management
+
+### `backend.tf`
+
+Contains Terraform backend configuration.
+
+### `backend_to_be_filled.tf`
+
+Template for remote state configuration.
+
+Example:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket         = "my-terraform-state-bucket"
+    key            = "eks-foundations/terraform.tfstate"
+    region         = "ap-south-1"
+    dynamodb_table = "terraform-state-locks"
+  }
+}
+```
+
+---
+
+# Prerequisites
+
+Install the following tools:
+
+## Terraform
 
 ```bash
-aws configure
-aws sts get-caller-identity
+terraform version
+```
+
+## AWS CLI
+
+```bash
+aws --version
+```
+
+## kubectl
+
+```bash
+kubectl version --client
+```
+
+---
+
+# Deployment
+
+## Clone Repository
+
+```bash
+git clone https://github.com/abhinavcloud/eks-foundations-with-terraform.git
+
+cd eks-foundations-with-terraform/infra
 ```
 
 ## Initialize Terraform
 
-Terraform state lives in an S3 bucket you own. The backend is a partial configuration, so you pass your bucket at init time; the region is read from `AWS_REGION`. If you do not already have a bucket for state, create one first.
-
 ```bash
-cd infra
-terraform init -backend-config="bucket=YOUR_STATE_BUCKET"
+terraform init
 ```
 
-Expect `Successfully configured the backend "s3"!` and `Terraform has been successfully initialized!`. From here the `infra/` project is ready to build on, starting with the first lab in `_labs/`.
+## Validate Configuration
 
-## Labs
+```bash
+terraform validate
+```
 
-The labs in `_labs/` follow the order of the course. Each one describes the configuration to target rather than handing you the code, so you write the Terraform yourself and check it against the [course code repository](https://github.com/lm-academy/eks-foundations-solution) afterwards.
+## Review Changes
 
-The cluster, the NAT gateway, the nodes, and the load balancer are all billed resources. Tear everything down at the end of a session.
+```bash
+terraform plan
+```
 
-I'm looking forward to seeing you in the course!
+## Deploy Infrastructure
+
+```bash
+terraform apply
+```
+
+---
+
+# Configure kubectl
+
+After the cluster is successfully created:
+
+```bash
+aws eks update-kubeconfig \
+  --region ap-south-1 \
+  --name eks-foundations-cluster
+```
+
+Verify access:
+
+```bash
+kubectl get nodes
+```
+
+Expected output:
+
+```bash
+NAME                          STATUS   ROLES    AGE
+ip-10-0-x-x.ec2.internal      Ready    <none>   5m
+```
+
+---
+
+# Validate Cluster Add-ons
+
+List installed add-ons:
+
+```bash
+aws eks list-addons \
+  --cluster-name eks-foundations-cluster
+```
+
+Check addon health:
+
+```bash
+aws eks describe-addon \
+  --cluster-name eks-foundations-cluster \
+  --addon-name vpc-cni
+```
+
+Verify pods:
+
+```bash
+kubectl get pods -n kube-system
+```
+
+---
+
+# Deploy Sample Application
+
+Navigate to the Kubernetes manifests folder:
+
+```bash
+cd ../k8s
+```
+
+Deploy NGINX:
+
+```bash
+kubectl apply -f nginx-deployment.yaml
+
+kubectl apply -f nginx-service.yaml
+```
+
+Verify resources:
+
+```bash
+kubectl get deployments
+
+kubectl get pods
+
+kubectl get svc
+```
+
+---
+
+# Useful Commands
+
+## View Cluster Information
+
+```bash
+aws eks describe-cluster \
+  --name eks-foundations-cluster
+```
+
+## View Nodes
+
+```bash
+kubectl get nodes -o wide
+```
+
+## View All Resources
+
+```bash
+kubectl get all -A
+```
+
+## View System Components
+
+```bash
+kubectl get pods -n kube-system
+```
+
+## View Add-ons
+
+```bash
+aws eks list-addons \
+  --cluster-name eks-foundations-cluster
+```
+
+---
+
+# Destroy Infrastructure
+
+When no longer required:
+
+```bash
+terraform destroy
+```
+
+---
+
+# Security Best Practices
+
+This project follows several AWS and Kubernetes best practices:
+
+- Worker nodes are deployed in private subnets.
+- Internet access is controlled through NAT Gateways.
+- IAM roles are separated for cluster and node groups.
+- EKS-managed security groups are used.
+- Remote Terraform state is supported.
+- State locking can be enabled using DynamoDB.
+
+---
+
+# Future Enhancements
+
+Potential additions:
+
+- AWS Load Balancer Controller
+- Cluster Autoscaler
+- Karpenter
+- EBS CSI Driver
+- EFS CSI Driver
+- ExternalDNS
+- Cert Manager
+- ArgoCD
+- Prometheus & Grafana
+- Fluent Bit
+- Amazon CloudWatch Container Insights
+
+---
+
+# Learning Outcomes
+
+By building this project, you gain hands-on experience with:
+
+- Terraform Fundamentals
+- Amazon EKS
+- AWS Networking
+- IAM Design
+- Kubernetes Operations
+- EKS Add-ons
+- Infrastructure as Code
+- Production-grade AWS Architectures
+
+---
+
+## Author
+
+**Abhinav Cloud**
+
+AWS | Terraform | Kubernetes | AI Solutions Architecture
