@@ -36,3 +36,6 @@ venv/
 .idea/
 *.swp
 *~
+
+_labs
+.devcontainer

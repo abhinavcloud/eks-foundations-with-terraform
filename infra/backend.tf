@@ -4,7 +4,8 @@ terraform {
   # account-specific values. use_lockfile enables native S3 state locking,
   # with no DynamoDB table required (Terraform 1.10+).
   backend "s3" {
-    key          = "eks-foundations/terraform.tfstate"
+    bucket       = "eks-foundations-tfstate"
+    key          = "terraform.tfstate"
     encrypt      = true
     use_lockfile = true
   }
